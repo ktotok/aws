@@ -14,12 +14,6 @@
             "LaunchConfigurationName" : { "Ref" : "SimpleConfig" },
             "MinSize" : "1",
             "MaxSize" : "2"
-            },
-        "UpdatePolicy" : {
-            "AutoScalingRollingUpdate" : {
-                "MinInstancesInService" : "1",
-                "MaxBatchSize" : "1",
-                "PauseTime" : "PT12M5S"
             }
         }
     }
