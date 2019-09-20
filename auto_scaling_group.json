@@ -1,0 +1,20 @@
+"Resources" : {
+    "SimpleConfig" : {
+        "Type" : "AWS::AutoScaling::LaunchConfiguration",
+        "Properties" : {
+           "ImageId" : "ami-00c03f7f7f2ec15c3",
+           "InstanceType" : "t2.micro"
+        }
+     },
+    "KtoAutoScalingGroup" : {
+        "Type" : "AWS::AutoScaling::AutoScalingGroup",
+        "Properties" : {
+            "AutoScalingGroupName" : "kto-sg-y23",
+            "AvailabilityZones" : { "Fn::GetAZs" : { "Ref" : "AWS::Region" }},
+            "LaunchConfigurationName" : { "Ref" : "SimpleConfig" },
+            "MinSize" : "1",
+            "MaxSize" : "2"
+            }
+        }
+    }
+}
