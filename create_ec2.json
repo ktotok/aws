@@ -1,0 +1,100 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    
+    "Parameters" : {
+        "BucketName" : {
+            "Description" : "Name of bucket containing website.tar.gz",
+            "Type" : "String"
+        },
+        "KeyName": {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        }
+    },
+    "Resources" : {    
+        "CfnUser" : {
+        "Type" : "AWS::IAM::User",
+        "Properties" : {
+          "Path": "/",
+          "Policies": [{
+            "PolicyName": "root",
+            "PolicyDocument": { "Statement":[{
+              "Effect"   : "Allow",
+              "Action"   : [
+                "cloudformation:DescribeStackResource",
+                "s3:GetObject"
+              ],
+              "Resource" :"*"
+            }]}
+          }]
+        }
+        },
+  
+        "CfnKeys" : {
+        "Type" : "AWS::IAM::AccessKey",
+        "Properties" : {
+            "UserName" : {"Ref": "CfnUser"}
+            }
+        },
+
+        "BucketPolicy" : {
+        "Type" : "AWS::S3::BucketPolicy",
+        "Properties" : {
+            "PolicyDocument": {
+            "Version"      : "2008-10-17",
+            "Id"           : "MyPolicy",
+            "Statement"    : [{
+                "Sid"        : "ReadAccess",
+                "Action"     : ["s3:GetObject"],
+                "Effect"     : "Allow",
+                "Resource"   : { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "BucketName" }, "/*"]]},
+                "Principal"  : { "AWS": {"Fn::GetAtt" : ["CfnUser", "Arn"]} }
+            }]
+            },
+            "Bucket" : { "Ref" : "BucketName" }
+        }
+        },
+
+        "KtoInstance": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn" : "BucketPolicy",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                        "files" : {
+                            "/home/ec2-user/s3_content.txt" : {
+                            "source" : { "Fn::Join" : ["", ["http://", { "Ref" : "BucketName" }, ".s3.amazonaws.com/s3_content.txt"]]},
+                            "authentication" : "S3AccessCreds"
+                            }
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Authentication" : {
+                    "S3AccessCreds" : {
+                        "type" : "S3",
+                        "accessKeyId" : { "Ref" : "CfnKeys" },
+                        "secretKey" : { "Fn::GetAtt": [ "CfnKeys", "SecretAccessKey" ] }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId" : "ami-00c03f7f7f2ec15c3" ,
+                "InstanceType"   : "t2.micro",
+                "SecurityGroups" : [ {"Ref" : "SSHSecurityGroup"} ],
+                "KeyName"        : { "Ref" : "KeyName" }        
+            }
+        },
+        "SSHSecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable SSH access via port 22",
+                "SecurityGroupIngress" : [ {
+                  "IpProtocol" : "tcp",
+                  "FromPort" : "22",
+                  "ToPort" : "22",
+                  "CidrIp" : "0.0.0.0/0"
+                } ]
+              }  
+        }
+    }     
+}
