@@ -1,0 +1,226 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+Resources: 
+  SampleDynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Album"
+          AttributeType: "S"
+        - 
+          AttributeName: "Artist"
+          AttributeType: "S"
+        - 
+          AttributeName: "Sales"
+          AttributeType: "N"
+        - 
+          AttributeName: "NumberOfSongs"
+          AttributeType: "N"
+      KeySchema: 
+        - 
+          AttributeName: "Album"
+          KeyType: "HASH"
+        - 
+          AttributeName: "Artist"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName: "Bandcamp"
+      GlobalSecondaryIndexes: 
+        - 
+          IndexName: "myGSI"
+          KeySchema: 
+            - 
+              AttributeName: "Sales"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Artist"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "Album"
+              - "NumberOfSongs"
+            ProjectionType: "INCLUDE"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "5"
+            WriteCapacityUnits: "5"
+        - 
+          IndexName: "myGSI2"
+          KeySchema: 
+            - 
+              AttributeName: "NumberOfSongs"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Sales"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "Album"
+              - "Artist"
+            ProjectionType: "INCLUDE"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "5"
+            WriteCapacityUnits: "5"
+      LocalSecondaryIndexes: 
+        - 
+          IndexName: "myLSI"
+          KeySchema: 
+            - 
+              AttributeName: "Album"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Sales"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "Artist"
+              - "NumberOfSongs"
+            ProjectionType: "INCLUDE"
+
+  PsqlInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: 'db.t3.micro'
+      DBName: 'PostgreSQLDB'
+      AllocatedStorage: 6
+      Engine: 'postgres'
+      EngineVersion: '11.4'
+      MasterUsername: 'postgres'
+      MasterUserPassword: 'Password1'
+      PubliclyAccessible: True
+      VPCSecurityGroups: 
+        - 
+          !GetAtt [ "PostgresSecurityGroup", "GroupId" ]
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: 't2.micro'
+      ImageId: 'ami-00c03f7f7f2ec15c3'
+      SecurityGroups: [!Ref 'InstanceSecurityGroup']
+      KeyName: !Ref 'KeyName'
+      IamInstanceProfile: !Ref RootInstanceProfile
+      UserData: !Base64
+          'Fn::Join':
+            - ''
+            - - |
+                #!/bin/bash -xe
+              - |
+                aws s3api get-object --bucket kto-bucket --key dynamo_script.sh dynamo_script.sh
+                aws s3api get-object --bucket kto-bucket --key sql-script.sql sql-script.sql
+                aws s3api get-object --bucket kto-bucket --key execute-psql-script.sh execute-psql-script.sh
+                sudo yum -y install postgresql
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: '0.0.0.0/0'
+
+  RootInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+
+  S3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: s3-access-policy
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: '*'
+      Roles:
+        - !Ref InstanceRole
+
+  DynamoPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: dynamo-access-policy
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+            - dynamodb:List*
+            - dynamodb:DescribeTable
+            - dynamodb:Get*
+            - dynamodb:Put*
+            - dynamodb:Query
+          Resource: '*'
+      Roles:
+        - !Ref InstanceRole
+
+  PsqlPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: s3-access-policy
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - rds:*
+            Resource: '*'
+      Roles:
+        - !Ref InstanceRole
+
+  PostgresSecurityGroup: 
+      Type: "AWS::EC2::SecurityGroup"
+      Properties:
+        GroupDescription : "Open 5432 port"
+        GroupName : "PosgresDB access"
+        SecurityGroupIngress: 
+        - 
+          CidrIp: "0.0.0.0/0"
+          FromPort: "5432"
+          ToPort: "5432"
+          IpProtocol: "6"
+          
+Outputs:
+  PublicDNS:
+      Description: Public DNSName of the newly created EC2 instance
+      Value: !GetAtt [EC2Instance, PublicDnsName]
+  JDBCConnectionString: 
+      Description: "JDBC connection string for the database"
+      Value: 
+        'Fn::Join':
+          - ""
+          - - "jdbc:postgresql://"
+            - !GetAtt 'PsqlInstance.Endpoint.Address'
+            - ":"
+            - !GetAtt 'PsqlInstance.Endpoint.Port'
+            - "/"
+            - "PostgreSQLDB"
+  EndpointDB:
+    Description: "Endpoint of the newly created RDS"
+    Value: !GetAtt PsqlInstance.Endpoint.Address
+  PortDB:
+    Description: "Port of the newly created RDS"
+    Value: !GetAtt PsqlInstance.Endpoint.Port
