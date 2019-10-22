@@ -10,3 +10,33 @@ Current repository contains set of AWS CloudFormation scripts that demonstates h
 
 05_sqs_sns.yaml - environment with SQS, SNS and EC2 instance that is allows to create Topic, send message to Queue, email notification is sent
 
+06_calc_env.yaml - spin up environment for Calc application (reffer schema image calc_schema.png)
+
+SNS topic name : "edu-lohika-training-aws-sns-topic"
+
+SQS name : "edu-lohika-training-aws-sqs-queue"
+
+RDS DBName : "EduLohikaTrainingAwsRds"
+
+RDS port: 5432
+
+RDS user/password: rootuser/rootuser
+
+DynamoDB TableName: "edu-lohika-training-aws-dynamodb", only one field, UserName, type: String
+
+Backend calc port: 80
+
+Client launch command line:
+
+java -cp calc-client-1.0-SNAPSHOT-jar-with-dependencies.jar CalcClient <ELB’s DNS name>
+
+RDS_HOST environment variable at instance, where "persist3-0.0.1-SNAPSHOT.jar" is running – assumed to have value of RDS host DNS name.
+
+Connect DB
+
+psql -h dbhostname -d dbname -U username
+
+
+calc-client-1.0-SNAPSHOT-jar-with-dependencies - Launch at your work PC
+calc-0.0.1-SNAPSHOT - upload and launch at public instance (ASG)
+persist3-0.0.1-SNAPSHOT - upload and launch at private instance
